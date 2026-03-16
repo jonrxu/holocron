@@ -7,132 +7,202 @@
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
-    <div class="shell">
+    <div class="app-shell">
       <aside class="sidebar">
-        <div class="brand">
-          <p class="eyebrow">Personal Research Memory</p>
-          <h1>Holocron</h1>
-          <p class="lede">Drop in a paper, let it get distilled, and keep the record searchable and dated.</p>
+        <div class="sidebar-top">
+          <a class="brand" href="/">Holocron</a>
+          <p class="sidebar-copy">A quiet place for papers, notes, and memory.</p>
         </div>
 
-        <section class="panel">
-          <h2>Add Paper</h2>
-          <form id="upload-form" class="stack">
-            <label class="file-input">
-              <span>Select PDF</span>
-              <input id="paper-file" name="file" type="file" accept="application/pdf" required>
-            </label>
-            <button type="submit">Upload PDF</button>
-          </form>
-          <form id="url-form" class="stack secondary-form">
-            <input id="paper-url" type="url" placeholder="Direct PDF URL">
-            <button type="submit" class="secondary">Ingest URL</button>
-          </form>
-          <p id="upload-status" class="muted"></p>
-        </section>
+        <nav class="nav">
+          <button type="button" class="nav-link active" data-view="home">Home</button>
+          <button type="button" class="nav-link" data-view="library">Library</button>
+        </nav>
 
-        <section class="panel">
-          <div class="section-head">
-            <h2>Inbox</h2>
-            <button id="refresh-button" class="ghost">Refresh</button>
+        <section class="sidebar-section">
+          <div class="section-row">
+            <p class="section-label">Review</p>
+            <button id="refresh-button" class="text-button" type="button">Refresh</button>
           </div>
-          <ul id="paper-list" class="paper-list"></ul>
-        </section>
-
-        <section class="panel">
-          <h2>Review Queue</h2>
           <ul id="review-queue" class="review-list"></ul>
         </section>
       </aside>
 
-      <main class="detail">
-        <section id="empty-state" class="hero-card">
-          <p class="eyebrow">Phase 1</p>
-          <h2>Ingest, distill, annotate</h2>
-          <p>Upload a PDF to see the structured brief, notes, event history, and the first-pass paper memory record.</p>
+      <main class="main">
+        <section id="view-home" class="view">
+          <section class="hero">
+            <p class="eyebrow">Personal research memory</p>
+            <h1>Upload a paper. Keep the understanding.</h1>
+            <p class="hero-copy">
+              Holocron stores the PDF once, writes a brief, and keeps your notes and reading history in one place.
+            </p>
+          </section>
+
+          <section class="surface upload-surface">
+            <div class="section-row section-row-top">
+              <div>
+                <h2>Add paper</h2>
+                <p class="subtle">Just upload the PDF or paste a direct link.</p>
+              </div>
+            </div>
+
+            <form id="upload-form" class="upload-form">
+              <label class="upload-drop" for="paper-file">
+                <span class="upload-drop-title">Choose a PDF</span>
+                <span class="upload-drop-copy">No folders, no manual metadata, no extra steps.</span>
+              </label>
+              <input id="paper-file" name="file" type="file" accept="application/pdf" required>
+              <button type="submit">Upload</button>
+            </form>
+
+            <form id="url-form" class="url-form">
+              <input id="paper-url" type="url" placeholder="Or paste a direct PDF URL">
+              <button type="submit" class="secondary">Ingest URL</button>
+            </form>
+
+            <p id="upload-status" class="status-text"></p>
+          </section>
+
+          <section class="home-grid">
+            <article class="surface compact-surface">
+              <p class="metric-label">Papers</p>
+              <p id="metric-papers" class="metric-value">0</p>
+            </article>
+
+            <article class="surface compact-surface">
+              <p class="metric-label">Needs review</p>
+              <p id="metric-review" class="metric-value">0</p>
+            </article>
+
+            <article class="surface compact-surface">
+              <p class="metric-label">Last added</p>
+              <p id="metric-latest" class="metric-text">Nothing yet</p>
+            </article>
+          </section>
+
+          <section class="surface">
+            <div class="section-row">
+              <div>
+                <h2>Recent papers</h2>
+                <p class="subtle">The newest items in your library.</p>
+              </div>
+              <button id="go-library-button" class="text-button" type="button">Open library</button>
+            </div>
+            <ul id="recent-papers" class="recent-list"></ul>
+          </section>
         </section>
 
-        <section id="paper-detail" class="paper-detail hidden">
-          <div class="detail-top">
+        <section id="view-library" class="view hidden">
+          <div class="section-row library-heading">
             <div>
-              <p id="paper-status" class="status-pill"></p>
-              <h2 id="paper-title"></h2>
-              <p id="paper-meta" class="muted"></p>
-            </div>
-            <div class="detail-actions">
-              <a id="paper-file-link" target="_blank" rel="noreferrer">Open PDF</a>
-              <button id="important-button" class="secondary">Toggle Important</button>
+              <p class="eyebrow">Library</p>
+              <h2>Your papers</h2>
             </div>
           </div>
 
-          <div class="detail-grid">
-            <section class="card">
-              <h3>Brief</h3>
-              <p id="summary-short" class="summary-short"></p>
-              <p id="summary-long"></p>
-              <div class="mini-section">
-                <h4>Why It Matters</h4>
-                <p id="why-it-matters"></p>
-              </div>
-              <div class="mini-section">
-                <h4>Method</h4>
-                <p id="method-summary"></p>
-              </div>
+          <div class="library-layout">
+            <section class="surface library-pane">
+              <ul id="paper-list" class="paper-list"></ul>
             </section>
 
-            <section class="card">
-              <h3>Claims</h3>
-              <ul id="claims"></ul>
-              <div class="mini-section">
-                <h4>Limitations</h4>
-                <ul id="limitations"></ul>
-              </div>
-            </section>
+            <section class="library-detail">
+              <section id="empty-state" class="surface empty-state">
+                <p class="eyebrow">Select a paper</p>
+                <h3>Open something from the library.</h3>
+                <p>
+                  The selected paper will show its brief, notes, and a lightweight constellation of tags and signals here.
+                </p>
+              </section>
 
-            <section class="card">
-              <h3>Signals</h3>
-              <dl class="signal-grid">
-                <div>
-                  <dt>Tasks</dt>
-                  <dd id="tasks"></dd>
-                </div>
-                <div>
-                  <dt>Datasets</dt>
-                  <dd id="datasets"></dd>
-                </div>
-                <div>
-                  <dt>Tags</dt>
-                  <dd id="tags"></dd>
-                </div>
-                <div>
-                  <dt>Confidence</dt>
-                  <dd id="confidence"></dd>
-                </div>
-              </dl>
-              <div class="mini-section">
-                <h4>Follow-up Questions</h4>
-                <ul id="followups"></ul>
-              </div>
-            </section>
+              <section id="paper-detail" class="hidden">
+                <section class="surface detail-hero">
+                  <div class="detail-top">
+                    <div>
+                      <p id="paper-status" class="status-label"></p>
+                      <h3 id="paper-title"></h3>
+                      <p id="paper-meta" class="subtle"></p>
+                    </div>
+                    <div class="detail-actions">
+                      <a id="paper-file-link" target="_blank" rel="noreferrer">Open PDF</a>
+                      <button id="important-button" type="button" class="secondary">Mark important</button>
+                    </div>
+                  </div>
+                  <p id="summary-short" class="lead"></p>
+                  <p id="summary-long" class="body-copy"></p>
+                </section>
 
-            <section class="card card-wide">
-              <div class="section-head">
-                <h3>Notes</h3>
-                <span id="note-count" class="muted"></span>
-              </div>
-              <form id="note-form" class="note-form">
-                <textarea id="note-body" rows="4" placeholder="Add your reading notes"></textarea>
-                <div class="note-controls">
-                  <input id="note-page" type="number" min="1" placeholder="Page (optional)">
-                  <button type="submit">Save Note</button>
-                </div>
-              </form>
-              <ul id="notes"></ul>
-            </section>
+                <div class="detail-grid">
+                  <section class="surface">
+                    <h4>Brief</h4>
+                    <div class="text-block">
+                      <p class="field-label">Why it matters</p>
+                      <p id="why-it-matters"></p>
+                    </div>
+                    <div class="text-block">
+                      <p class="field-label">Method</p>
+                      <p id="method-summary"></p>
+                    </div>
+                    <div class="text-block">
+                      <p class="field-label">Claims</p>
+                      <ul id="claims" class="bullet-list"></ul>
+                    </div>
+                    <div class="text-block">
+                      <p class="field-label">Limitations</p>
+                      <ul id="limitations" class="bullet-list"></ul>
+                    </div>
+                  </section>
 
-            <section class="card card-wide">
-              <h3>Event History</h3>
-              <ul id="events"></ul>
+                  <section class="surface">
+                    <h4>Constellation</h4>
+                    <div class="constellation">
+                      <div id="constellation-core" class="core-chip"></div>
+                      <div id="constellation-chips" class="chip-cloud"></div>
+                    </div>
+                    <dl class="metadata-grid">
+                      <div>
+                        <dt>Tasks</dt>
+                        <dd id="tasks"></dd>
+                      </div>
+                      <div>
+                        <dt>Datasets</dt>
+                        <dd id="datasets"></dd>
+                      </div>
+                      <div>
+                        <dt>Tags</dt>
+                        <dd id="tags"></dd>
+                      </div>
+                      <div>
+                        <dt>Confidence</dt>
+                        <dd id="confidence"></dd>
+                      </div>
+                    </dl>
+                    <div class="text-block">
+                      <p class="field-label">Follow-up questions</p>
+                      <ul id="followups" class="bullet-list"></ul>
+                    </div>
+                  </section>
+
+                  <section class="surface detail-wide">
+                    <div class="section-row">
+                      <h4>Notes</h4>
+                      <span id="note-count" class="subtle"></span>
+                    </div>
+                    <form id="note-form" class="note-form">
+                      <textarea id="note-body" rows="4" placeholder="Add your reading notes"></textarea>
+                      <div class="note-actions">
+                        <input id="note-page" type="number" min="1" placeholder="Page (optional)">
+                        <button type="submit">Save note</button>
+                      </div>
+                    </form>
+                    <ul id="notes" class="stack-list"></ul>
+                  </section>
+
+                  <section class="surface detail-wide">
+                    <h4>History</h4>
+                    <ul id="events" class="stack-list"></ul>
+                  </section>
+                </div>
+              </section>
             </section>
           </div>
         </section>

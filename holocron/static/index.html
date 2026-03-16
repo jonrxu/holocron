@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Holocron</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <p class="eyebrow">Personal Research Memory</p>
+          <h1>Holocron</h1>
+          <p class="lede">Drop in a paper, let it get distilled, and keep the record searchable and dated.</p>
+        </div>
+
+        <section class="panel">
+          <h2>Add Paper</h2>
+          <form id="upload-form" class="stack">
+            <label class="file-input">
+              <span>Select PDF</span>
+              <input id="paper-file" name="file" type="file" accept="application/pdf" required>
+            </label>
+            <button type="submit">Upload PDF</button>
+          </form>
+          <form id="url-form" class="stack secondary-form">
+            <input id="paper-url" type="url" placeholder="Direct PDF URL">
+            <button type="submit" class="secondary">Ingest URL</button>
+          </form>
+          <p id="upload-status" class="muted"></p>
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <h2>Inbox</h2>
+            <button id="refresh-button" class="ghost">Refresh</button>
+          </div>
+          <ul id="paper-list" class="paper-list"></ul>
+        </section>
+
+        <section class="panel">
+          <h2>Review Queue</h2>
+          <ul id="review-queue" class="review-list"></ul>
+        </section>
+      </aside>
+
+      <main class="detail">
+        <section id="empty-state" class="hero-card">
+          <p class="eyebrow">Phase 1</p>
+          <h2>Ingest, distill, annotate</h2>
+          <p>Upload a PDF to see the structured brief, notes, event history, and the first-pass paper memory record.</p>
+        </section>
+
+        <section id="paper-detail" class="paper-detail hidden">
+          <div class="detail-top">
+            <div>
+              <p id="paper-status" class="status-pill"></p>
+              <h2 id="paper-title"></h2>
+              <p id="paper-meta" class="muted"></p>
+            </div>
+            <div class="detail-actions">
+              <a id="paper-file-link" target="_blank" rel="noreferrer">Open PDF</a>
+              <button id="important-button" class="secondary">Toggle Important</button>
+            </div>
+          </div>
+
+          <div class="detail-grid">
+            <section class="card">
+              <h3>Brief</h3>
+              <p id="summary-short" class="summary-short"></p>
+              <p id="summary-long"></p>
+              <div class="mini-section">
+                <h4>Why It Matters</h4>
+                <p id="why-it-matters"></p>
+              </div>
+              <div class="mini-section">
+                <h4>Method</h4>
+                <p id="method-summary"></p>
+              </div>
+            </section>
+
+            <section class="card">
+              <h3>Claims</h3>
+              <ul id="claims"></ul>
+              <div class="mini-section">
+                <h4>Limitations</h4>
+                <ul id="limitations"></ul>
+              </div>
+            </section>
+
+            <section class="card">
+              <h3>Signals</h3>
+              <dl class="signal-grid">
+                <div>
+                  <dt>Tasks</dt>
+                  <dd id="tasks"></dd>
+                </div>
+                <div>
+                  <dt>Datasets</dt>
+                  <dd id="datasets"></dd>
+                </div>
+                <div>
+                  <dt>Tags</dt>
+                  <dd id="tags"></dd>
+                </div>
+                <div>
+                  <dt>Confidence</dt>
+                  <dd id="confidence"></dd>
+                </div>
+              </dl>
+              <div class="mini-section">
+                <h4>Follow-up Questions</h4>
+                <ul id="followups"></ul>
+              </div>
+            </section>
+
+            <section class="card card-wide">
+              <div class="section-head">
+                <h3>Notes</h3>
+                <span id="note-count" class="muted"></span>
+              </div>
+              <form id="note-form" class="note-form">
+                <textarea id="note-body" rows="4" placeholder="Add your reading notes"></textarea>
+                <div class="note-controls">
+                  <input id="note-page" type="number" min="1" placeholder="Page (optional)">
+                  <button type="submit">Save Note</button>
+                </div>
+              </form>
+              <ul id="notes"></ul>
+            </section>
+
+            <section class="card card-wide">
+              <h3>Event History</h3>
+              <ul id="events"></ul>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/app.js" defer></script>
+  </body>
+  </html>

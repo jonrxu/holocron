@@ -33,16 +33,40 @@ python3 -m holocron
 
 Then open [http://127.0.0.1:8420](http://127.0.0.1:8420).
 
+Holocron also auto-loads a local `.env` file from the project root on startup.
+
 Useful environment variables:
 - `HOLOCRON_BLOB_DIR=/path/to/synced-or-shared-folder`
 - `HOLOCRON_DATA_DIR=/path/to/local-app-data`
 - `HOLOCRON_PORT=8420`
 - `HOLOCRON_ANALYZER_COMMAND=/path/to/custom-analyzer`
+- `OPENAI_API_KEY=...`
+- `HOLOCRON_OPENAI_MODEL=gpt-5`
+- `HOLOCRON_OPENAI_REASONING_EFFORT=low`
+- `GEMINI_API_KEY=...` or `GOOGLE_API_KEY=...`
+- `HOLOCRON_GEMINI_EMBEDDING_MODEL=gemini-embedding-001`
+- `HOLOCRON_GEMINI_EMBEDDING_DIMENSIONS=768`
 
-`HOLOCRON_ANALYZER_COMMAND` is optional. If set, Holocron will pipe JSON paper payloads to that command and expect structured JSON back. Otherwise it falls back to the built-in heuristic analyzer.
+Analyzer selection works like this:
+- if `HOLOCRON_ANALYZER_COMMAND` is set, Holocron pipes JSON paper payloads to that command and expects structured JSON back
+- otherwise, if `OPENAI_API_KEY` or `HOLOCRON_OPENAI_API_KEY` is set, Holocron uses the built-in OpenAI Responses API analyzer
+- otherwise it falls back to the built-in heuristic analyzer
+
+The OpenAI path still falls back to the heuristic analyzer if the model call fails, so ingestion remains usable even when the remote analysis path is unavailable.
+
+Embeddings work similarly:
+- if `GEMINI_API_KEY`, `GOOGLE_API_KEY`, or `HOLOCRON_GEMINI_API_KEY` is set, Holocron uses Gemini embeddings for semantic ranking and the 2D paper map
+- otherwise it falls back to a local hashed embedding so the map and search still work without a remote dependency
 
 ## Verify
 
 ```bash
 python3 -m unittest discover -s tests -v
 ```
+
+## Future ideas
+
+- Holocron could grow into a lightweight note-taking companion, not just a paper archive.
+- While you write notes on a paper, a small background model could watch the note stream and wait for a pause in typing before doing anything.
+- On each pause, it could suggest related papers, adjacent ideas, missing questions, or links to concepts already in your library.
+- The important constraint is restraint: suggestions should appear only at quiet intervals, not continuously while you type.

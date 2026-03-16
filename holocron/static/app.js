@@ -1,14 +1,17 @@
 const state = {
-  activeView: "home",
-  papers: [],
-  reviewQueue: [],
+  allPapers: [],
+  libraryPapers: [],
+  libraryGraph: { nodes: [] },
   selectedPaperId: null,
+  searchQuery: "",
 };
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   month: "short",
   day: "numeric",
 });
+
+let searchTimer = null;
 
 async function request(url, options = {}) {
   const response = await fetch(url, options);
@@ -26,14 +29,6 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;");
 }
 
-function formatList(items) {
-  return items && items.length ? items.join(", ") : "None";
-}
-
-function statusLabel(status) {
-  return String(status || "").replaceAll("_", " ");
-}
-
 function formatDate(value) {
   if (!value) {
     return "Nothing yet";
@@ -41,158 +36,103 @@ function formatDate(value) {
   return dateFormatter.format(new Date(value));
 }
 
-function setView(view) {
-  state.activeView = view;
-  document.querySelector("#view-home").classList.toggle("hidden", view !== "home");
-  document.querySelector("#view-library").classList.toggle("hidden", view !== "library");
-  document.querySelectorAll(".nav-link").forEach((button) => {
-    button.classList.toggle("active", button.dataset.view === view);
-  });
+function truncate(value, maxLength = 180) {
+  const text = String(value || "").trim();
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
-function renderReviewQueue() {
-  const list = document.querySelector("#review-queue");
-  list.innerHTML = "";
-  if (!state.reviewQueue.length) {
-    list.innerHTML = `<li class="empty-list">Nothing needs attention right now.</li>`;
-    return;
-  }
-
-  for (const item of state.reviewQueue.slice(0, 6)) {
-    const li = document.createElement("li");
-    li.className = "review-item";
-    li.innerHTML = `
-      <button type="button" data-paper-id="${item.paper_id}">
-        <strong>${escapeHtml(item.title)}</strong>
-        <p>${escapeHtml(item.reasons[0])}</p>
-      </button>
-    `;
-    list.appendChild(li);
-  }
+function statusLabel(status) {
+  return String(status || "").replaceAll("_", " ");
 }
 
-function renderHome() {
-  document.querySelector("#metric-papers").textContent = state.papers.length;
-  document.querySelector("#metric-review").textContent = state.reviewQueue.length;
-  document.querySelector("#metric-latest").textContent = state.papers.length
-    ? formatDate(state.papers[0].added_at)
-    : "Nothing yet";
-
-  const list = document.querySelector("#recent-papers");
-  list.innerHTML = "";
-  if (!state.papers.length) {
-    list.innerHTML = `<li class="empty-list">Your uploads will appear here.</li>`;
-    return;
+function buildLibraryUrl() {
+  const params = new URLSearchParams();
+  if (state.searchQuery.trim()) {
+    params.set("q", state.searchQuery.trim());
   }
-
-  for (const paper of state.papers.slice(0, 5)) {
-    const li = document.createElement("li");
-    li.className = "recent-paper";
-    li.innerHTML = `
-      <button type="button" data-paper-id="${paper.id}">
-        <span class="paper-title">${escapeHtml(paper.title || paper.original_filename || "Untitled paper")}</span>
-        <span class="paper-meta">${escapeHtml(formatDate(paper.added_at))} • ${escapeHtml(statusLabel(paper.status))}</span>
-      </button>
-    `;
-    list.appendChild(li);
-  }
+  return params.toString() ? `/api/papers?${params.toString()}` : "/api/papers";
 }
 
-function renderLibraryList() {
+function renderHeader() {
+  const total = state.allPapers.length;
+  const shown = state.libraryPapers.length;
+  document.querySelector("#library-meta").textContent =
+    state.searchQuery.trim() ? `${shown} of ${total} papers` : `${total} papers`;
+  document.querySelector("#library-count").textContent = `${shown} shown`;
+  document.querySelector("#library-graph-count").textContent = `${state.libraryGraph.nodes.length} points`;
+}
+
+function renderPaperList() {
   const list = document.querySelector("#paper-list");
   list.innerHTML = "";
-  if (!state.papers.length) {
-    list.innerHTML = `<li class="empty-list">No papers yet.</li>`;
+
+  if (!state.libraryPapers.length) {
+    list.innerHTML = `<li class="empty-list">No papers match this search.</li>`;
     return;
   }
 
-  for (const paper of state.papers) {
+  for (const paper of state.libraryPapers) {
     const li = document.createElement("li");
-    const active = paper.id === state.selectedPaperId ? " active" : "";
-    li.className = `paper-card${active}`;
+    li.className = paper.id === state.selectedPaperId ? "paper-row active" : "paper-row";
+
+    const meta = [statusLabel(paper.status), formatDate(paper.added_at)];
+    if (paper.semantic_score > 0 && state.searchQuery.trim()) {
+      meta.unshift(`match ${Math.round(paper.semantic_score * 100)}%`);
+    }
+
     li.innerHTML = `
-      <button type="button" data-paper-id="${paper.id}">
+      <button type="button" class="paper-button" data-paper-id="${paper.id}">
         <span class="paper-title">${escapeHtml(paper.title || paper.original_filename || "Untitled paper")}</span>
-        <span class="paper-meta">${escapeHtml(statusLabel(paper.status))}</span>
-        <span class="paper-meta">${escapeHtml(paper.summary_short || "Waiting for analysis...")}</span>
+        <span class="paper-meta">${escapeHtml(meta.join(" • "))}</span>
+        <span class="paper-summary">${escapeHtml(truncate(paper.summary_short || "Waiting for analysis..."))}</span>
       </button>
     `;
     list.appendChild(li);
   }
 }
 
-function fillList(selector, items, emptyMessage = "None yet.") {
-  const list = document.querySelector(selector);
+function renderTags(tags) {
+  const list = document.querySelector("#paper-tags");
   list.innerHTML = "";
-  if (!items || !items.length) {
-    list.innerHTML = `<li class="empty-list">${escapeHtml(emptyMessage)}</li>`;
+
+  if (!tags || !tags.length) {
+    list.innerHTML = `<li class="empty-list">Tags will appear after analysis.</li>`;
     return;
   }
 
-  for (const item of items) {
+  for (const tag of tags.slice(0, 8)) {
     const li = document.createElement("li");
-    li.textContent = item;
+    li.className = "signal-chip";
+    li.textContent = tag;
     list.appendChild(li);
   }
 }
 
-function renderConstellation(paper) {
-  document.querySelector("#constellation-core").textContent = paper.title || "Untitled paper";
-  const cloud = document.querySelector("#constellation-chips");
-  cloud.innerHTML = "";
-  const chips = [...paper.tags, ...paper.tasks, ...paper.datasets].slice(0, 12);
+function renderNotes(notes) {
+  const list = document.querySelector("#notes");
+  list.innerHTML = "";
 
-  if (!chips.length) {
-    cloud.innerHTML = `<span>Signals will appear after analysis.</span>`;
+  if (!notes.length) {
+    list.innerHTML = `<li class="empty-list">No notes yet.</li>`;
     return;
   }
 
-  for (const item of chips) {
-    const chip = document.createElement("span");
-    chip.textContent = item;
-    cloud.appendChild(chip);
-  }
-}
-
-function renderNotes(paper) {
-  const notes = document.querySelector("#notes");
-  notes.innerHTML = "";
-  if (!paper.notes.length) {
-    notes.innerHTML = `<li class="empty-list">No notes yet.</li>`;
-    return;
-  }
-
-  for (const note of paper.notes) {
+  for (const note of notes) {
     const li = document.createElement("li");
     const page = note.page_number ? ` • p.${note.page_number}` : "";
     li.innerHTML = `
       <p>${escapeHtml(note.body)}</p>
       <time>${escapeHtml(formatDate(note.created_at))}${page}</time>
     `;
-    notes.appendChild(li);
-  }
-}
-
-function renderEvents(paper) {
-  const events = document.querySelector("#events");
-  events.innerHTML = "";
-  if (!paper.events.length) {
-    events.innerHTML = `<li class="empty-list">No activity yet.</li>`;
-    return;
-  }
-
-  for (const event of paper.events) {
-    const li = document.createElement("li");
-    li.innerHTML = `
-      <p>${escapeHtml(event.event_type.replaceAll("_", " "))}</p>
-      <time>${escapeHtml(formatDate(event.created_at))}</time>
-    `;
-    events.appendChild(li);
+    list.appendChild(li);
   }
 }
 
 function renderDetail(paper) {
-  document.querySelector("#empty-state").classList.add("hidden");
+  document.querySelector("#empty-detail").classList.add("hidden");
   document.querySelector("#paper-detail").classList.remove("hidden");
   document.querySelector("#paper-status").textContent = statusLabel(paper.status);
   document.querySelector("#paper-title").textContent = paper.title || paper.original_filename || "Untitled paper";
@@ -206,164 +146,180 @@ function renderDetail(paper) {
   }
   meta.push(`added ${formatDate(paper.added_at)}`);
   document.querySelector("#paper-meta").textContent = meta.join(" • ");
-
-  document.querySelector("#paper-file-link").href = paper.file_url;
   document.querySelector("#summary-short").textContent = paper.summary_short || "Waiting for analysis...";
-  document.querySelector("#summary-long").textContent = paper.summary_long || "";
-  document.querySelector("#why-it-matters").textContent = paper.why_it_matters || "Pending analysis.";
-  document.querySelector("#method-summary").textContent = paper.method_summary || "Pending analysis.";
-  document.querySelector("#tasks").textContent = formatList(paper.tasks);
-  document.querySelector("#datasets").textContent = formatList(paper.datasets);
-  document.querySelector("#tags").textContent = formatList(paper.tags);
-  document.querySelector("#confidence").textContent =
-    paper.analysis_confidence != null ? `${Math.round(paper.analysis_confidence * 100)}%` : "Unknown";
+  document.querySelector("#paper-file-link").href = paper.file_url;
   document.querySelector("#note-count").textContent = `${paper.note_count} notes`;
 
-  const importantButton = document.querySelector("#important-button");
-  const important = paper.tags.includes("status:important");
-  importantButton.textContent = important ? "Unmark important" : "Mark important";
-
-  fillList("#claims", paper.claims, "No claims extracted yet.");
-  fillList("#limitations", paper.limitations, "No limitations extracted yet.");
-  fillList("#followups", paper.followup_questions, "No follow-up questions yet.");
-  renderConstellation(paper);
-  renderNotes(paper);
-  renderEvents(paper);
+  renderTags(paper.tags || []);
+  renderNotes(paper.notes || []);
 }
 
-async function loadPaper(paperId, options = {}) {
+function selectEmptyState() {
+  document.querySelector("#paper-detail").classList.add("hidden");
+  document.querySelector("#empty-detail").classList.remove("hidden");
+}
+
+function renderMap() {
+  const viewport = document.querySelector("#library-map-viewport");
+  viewport.innerHTML = "";
+  document.querySelector("#map-empty").classList.toggle("hidden", state.libraryGraph.nodes.length > 0);
+
+  for (const node of state.libraryGraph.nodes) {
+    const x = 50 + node.x * 38;
+    const y = 50 + node.y * 38;
+    const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    group.setAttribute("transform", `translate(${x} ${y})`);
+    group.setAttribute("data-paper-id", String(node.id));
+    group.setAttribute("class", node.id === state.selectedPaperId ? "map-node selected" : "map-node");
+
+    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    circle.setAttribute("r", node.id === state.selectedPaperId ? "1.9" : "1.35");
+    circle.setAttribute("class", "map-dot");
+    group.appendChild(circle);
+
+    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    title.textContent = node.title || "Untitled paper";
+    group.appendChild(title);
+
+    if (node.id === state.selectedPaperId) {
+      const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      label.setAttribute("y", "-3.2");
+      label.setAttribute("text-anchor", "middle");
+      label.setAttribute("class", "map-label");
+      label.textContent = node.title || "Untitled paper";
+      group.appendChild(label);
+    }
+
+    viewport.appendChild(group);
+  }
+}
+
+async function loadPaper(paperId) {
   state.selectedPaperId = paperId;
-  renderLibraryList();
+  renderPaperList();
+  renderMap();
   const { paper } = await request(`/api/papers/${paperId}`);
   renderDetail(paper);
-  if (options.switchView !== false) {
-    setView("library");
-  }
-  await request(`/api/papers/${paperId}/open`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: "{}",
-  });
 }
 
-async function loadPapers(selectedPaperId = state.selectedPaperId) {
-  const [{ papers }, { items }] = await Promise.all([
-    request("/api/papers"),
-    request("/api/review-queue"),
-  ]);
+async function loadPapers(selectedPaperId = state.selectedPaperId, options = {}) {
+  const libraryUrl = buildLibraryUrl();
+  const requests = [request(libraryUrl)];
+  if (libraryUrl === "/api/papers") {
+    requests.push(Promise.resolve(null));
+  } else {
+    requests.push(request("/api/papers"));
+  }
 
-  state.papers = papers;
-  state.reviewQueue = items;
-  renderReviewQueue();
-  renderHome();
-  renderLibraryList();
+  const [libraryPayload, allPayload] = await Promise.all(requests);
+  state.libraryPapers = libraryPayload.papers;
+  state.libraryGraph = libraryPayload.graph || { nodes: [] };
+  state.allPapers = (allPayload || libraryPayload).papers;
 
-  if (!state.papers.length) {
-    document.querySelector("#empty-state").classList.remove("hidden");
-    document.querySelector("#paper-detail").classList.add("hidden");
+  const stillVisible = selectedPaperId != null && state.libraryPapers.some((paper) => paper.id === selectedPaperId);
+  const shouldAutoSelect = !stillVisible && options.autoSelectFirst && state.libraryPapers.length > 0;
+
+  if (stillVisible) {
+    state.selectedPaperId = selectedPaperId;
+  } else if (shouldAutoSelect) {
+    state.selectedPaperId = state.libraryPapers[0].id;
+  } else {
     state.selectedPaperId = null;
+  }
+
+  renderHeader();
+  renderPaperList();
+  renderMap();
+
+  if (state.selectedPaperId != null) {
+    await loadPaper(state.selectedPaperId);
+  } else {
+    selectEmptyState();
+  }
+}
+
+async function handleUpload(file) {
+  const status = document.querySelector("#upload-status");
+  if (!file) {
     return;
   }
 
-  const nextPaperId =
-    selectedPaperId && state.papers.some((paper) => paper.id === selectedPaperId)
-      ? selectedPaperId
-      : state.selectedPaperId && state.papers.some((paper) => paper.id === state.selectedPaperId)
-        ? state.selectedPaperId
-        : state.papers[0].id;
+  status.textContent = "Uploading...";
+  const formData = new FormData();
+  formData.append("file", file);
 
-  if (nextPaperId) {
-    await loadPaper(nextPaperId, { switchView: false });
+  try {
+    const { paper } = await request("/api/papers/upload", {
+      method: "POST",
+      body: formData,
+    });
+    status.textContent = paper.duplicate ? "Already in the library." : "Paper queued for analysis.";
+    state.searchQuery = "";
+    document.querySelector("#library-search").value = "";
+    await loadPapers(paper.id, { autoSelectFirst: false });
+    await loadPaper(paper.id);
+  } catch (error) {
+    status.textContent = error.message;
   }
 }
 
-function bindNavigation() {
-  document.querySelectorAll(".nav-link").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const view = button.dataset.view;
-      setView(view);
-      if (view === "library" && state.papers.length && state.selectedPaperId == null) {
-        await loadPaper(state.papers[0].id, { switchView: false });
-      }
-    });
-  });
-
-  document.querySelector("#go-library-button").addEventListener("click", async () => {
-    setView("library");
-    if (state.papers.length) {
-      await loadPaper(state.selectedPaperId || state.papers[0].id, { switchView: false });
-    }
+function bindSearch() {
+  const input = document.querySelector("#library-search");
+  input.addEventListener("input", (event) => {
+    state.searchQuery = event.target.value;
+    window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(async () => {
+      await loadPapers(state.selectedPaperId, { autoSelectFirst: Boolean(state.searchQuery.trim()) });
+    }, 220);
   });
 }
 
-function bindPaperSelection() {
-  const selectPaper = async (event) => {
+function bindUpload() {
+  const input = document.querySelector("#paper-file");
+  const drop = document.querySelector("#upload-drop");
+
+  input.addEventListener("change", async (event) => {
+    const [file] = event.target.files;
+    await handleUpload(file);
+    input.value = "";
+  });
+
+  drop.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    drop.classList.add("dragging");
+  });
+
+  drop.addEventListener("dragleave", () => {
+    drop.classList.remove("dragging");
+  });
+
+  drop.addEventListener("drop", async (event) => {
+    event.preventDefault();
+    drop.classList.remove("dragging");
+    const [file] = event.dataTransfer.files;
+    await handleUpload(file);
+  });
+}
+
+function bindSelection() {
+  document.querySelector("#paper-list").addEventListener("click", async (event) => {
     const button = event.target.closest("button[data-paper-id]");
     if (!button) {
       return;
     }
     await loadPaper(Number(button.dataset.paperId));
-  };
-
-  document.querySelector("#recent-papers").addEventListener("click", selectPaper);
-  document.querySelector("#paper-list").addEventListener("click", selectPaper);
-  document.querySelector("#review-queue").addEventListener("click", selectPaper);
-}
-
-function bindUploadForms() {
-  document.querySelector("#upload-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const status = document.querySelector("#upload-status");
-    const input = document.querySelector("#paper-file");
-    if (!input.files.length) {
-      return;
-    }
-
-    status.textContent = "Uploading...";
-    const formData = new FormData();
-    formData.append("file", input.files[0]);
-
-    try {
-      const { paper } = await request("/api/papers/upload", {
-        method: "POST",
-        body: formData,
-      });
-      status.textContent = paper.duplicate ? "Already in the library. Opening it now." : "Paper queued for analysis.";
-      input.value = "";
-      setView("library");
-      await loadPapers(paper.id);
-    } catch (error) {
-      status.textContent = error.message;
-    }
   });
 
-  document.querySelector("#url-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const status = document.querySelector("#upload-status");
-    const input = document.querySelector("#paper-url");
-    const url = input.value.trim();
-    if (!url) {
+  document.querySelector("#library-map").addEventListener("click", async (event) => {
+    const node = event.target.closest("[data-paper-id]");
+    if (!node) {
       return;
     }
-
-    status.textContent = "Downloading...";
-    try {
-      const { paper } = await request("/api/papers/from-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-      status.textContent = "Paper queued for analysis.";
-      input.value = "";
-      setView("library");
-      await loadPapers(paper.id);
-    } catch (error) {
-      status.textContent = error.message;
-    }
+    await loadPaper(Number(node.dataset.paperId));
   });
 }
 
-function bindDetailActions() {
+function bindNotes() {
   document.querySelector("#note-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!state.selectedPaperId) {
@@ -389,34 +345,14 @@ function bindDetailActions() {
     bodyInput.value = "";
     pageInput.value = "";
     renderDetail(paper);
-    await loadPapers(state.selectedPaperId);
-  });
-
-  document.querySelector("#important-button").addEventListener("click", async () => {
-    if (!state.selectedPaperId) {
-      return;
-    }
-
-    const { paper } = await request(`/api/papers/${state.selectedPaperId}/tags/toggle`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tag: "status:important" }),
-    });
-
-    renderDetail(paper);
-    await loadPapers(state.selectedPaperId);
-  });
-
-  document.querySelector("#refresh-button").addEventListener("click", async () => {
-    await loadPapers();
+    await loadPapers(state.selectedPaperId, { autoSelectFirst: false });
   });
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
-  bindNavigation();
-  bindPaperSelection();
-  bindUploadForms();
-  bindDetailActions();
-  setView("home");
-  await loadPapers();
+  bindSearch();
+  bindUpload();
+  bindSelection();
+  bindNotes();
+  await loadPapers(null, { autoSelectFirst: false });
 });

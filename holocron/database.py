@@ -42,10 +42,38 @@ CREATE TABLE IF NOT EXISTS paper_artifacts (
     tasks_json TEXT NOT NULL DEFAULT '[]',
     tags_json TEXT NOT NULL DEFAULT '[]',
     followup_questions_json TEXT NOT NULL DEFAULT '[]',
+    embedding_json TEXT NOT NULL DEFAULT '[]',
+    embedding_model TEXT,
+    map_x REAL,
+    map_y REAL,
     analysis_version TEXT,
     analysis_confidence REAL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY (paper_id) REFERENCES papers(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS paper_tags (
+    paper_id INTEGER NOT NULL,
+    tag TEXT NOT NULL,
+    family TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'artifact',
+    PRIMARY KEY (paper_id, tag),
+    FOREIGN KEY (paper_id) REFERENCES papers(id) ON DELETE CASCADE
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS paper_search USING fts5(
+    paper_id UNINDEXED,
+    title,
+    authors,
+    abstract,
+    summary,
+    tags,
+    tasks,
+    datasets,
+    claims,
+    notes,
+    body,
+    tokenize = 'unicode61 remove_diacritics 2'
 );
 
 CREATE TABLE IF NOT EXISTS notes (
@@ -82,6 +110,8 @@ CREATE TABLE IF NOT EXISTS events (
 
 CREATE INDEX IF NOT EXISTS idx_papers_added_at ON papers(added_at DESC);
 CREATE INDEX IF NOT EXISTS idx_papers_status ON papers(status);
+CREATE INDEX IF NOT EXISTS idx_paper_tags_tag ON paper_tags(tag);
+CREATE INDEX IF NOT EXISTS idx_paper_tags_family ON paper_tags(family, tag);
 CREATE INDEX IF NOT EXISTS idx_notes_paper_id ON notes(paper_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_events_paper_id ON events(paper_id, created_at DESC);
 """
@@ -95,6 +125,23 @@ class Database:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            self._migrate(connection)
+
+    def _migrate(self, connection: sqlite3.Connection) -> None:
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(paper_artifacts)").fetchall()
+        }
+        if "embedding_json" not in columns:
+            connection.execute(
+                "ALTER TABLE paper_artifacts ADD COLUMN embedding_json TEXT NOT NULL DEFAULT '[]'"
+            )
+        if "embedding_model" not in columns:
+            connection.execute("ALTER TABLE paper_artifacts ADD COLUMN embedding_model TEXT")
+        if "map_x" not in columns:
+            connection.execute("ALTER TABLE paper_artifacts ADD COLUMN map_x REAL")
+        if "map_y" not in columns:
+            connection.execute("ALTER TABLE paper_artifacts ADD COLUMN map_y REAL")
 
     def connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=30.0, check_same_thread=False)

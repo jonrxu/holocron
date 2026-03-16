@@ -1,34 +1,42 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import queue
 import threading
 import urllib.request
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from .analysis import AnalysisInput, ExternalCommandAnalyzer, HeuristicAnalyzer
+from .analysis import (
+    AnalysisInput,
+    ExternalCommandAnalyzer,
+    FallbackAnalyzer,
+    HeuristicAnalyzer,
+    OpenAIAnalyzer,
+)
 from .config import Settings
 from .database import Database
+from .embedding import (
+    DocumentEmbeddingInput,
+    FallbackEmbeddingProvider,
+    GeminiEmbeddingProvider,
+    LocalEmbeddingProvider,
+)
 from .extractor import PdfExtractor
+from .library import (
+    build_embedding_text,
+    dumps_json,
+    get_library_graph,
+    rank_rows_by_embedding,
+    rebuild_embedding_map,
+    reindex_paper,
+    search_rows,
+    serialize_paper_detail,
+    serialize_paper_list_item,
+    utc_now,
+)
 from .storage import FileSystemBlobStore
-
-
-def utc_now() -> str:
-    return datetime.now(UTC).replace(microsecond=0).isoformat()
-
-
-def dumps_json(value: Any) -> str:
-    return json.dumps(value, sort_keys=True)
-
-
-def loads_json(value: str | None, default: Any) -> Any:
-    if not value:
-        return default
-    return json.loads(value)
 
 
 class HolocronService:
@@ -39,6 +47,7 @@ class HolocronService:
         storage: FileSystemBlobStore | None = None,
         extractor: PdfExtractor | None = None,
         analyzer: Any | None = None,
+        embedding_provider: Any | None = None,
         worker_enabled: bool = True,
     ) -> None:
         self.settings = settings
@@ -46,6 +55,7 @@ class HolocronService:
         self.storage = storage or FileSystemBlobStore(settings.blob_dir)
         self.extractor = extractor or PdfExtractor()
         self.analyzer = analyzer or self._build_analyzer()
+        self.embedding_provider = embedding_provider or self._build_embedding_provider()
         self.worker_enabled = worker_enabled
         self._queue: queue.Queue[int | None] = queue.Queue()
         self._stop_event = threading.Event()
@@ -54,11 +64,40 @@ class HolocronService:
     def _build_analyzer(self) -> Any:
         if self.settings.analyzer_command:
             return ExternalCommandAnalyzer(self.settings.analyzer_command)
-        return HeuristicAnalyzer()
+        heuristic = HeuristicAnalyzer()
+        if self.settings.openai_api_key:
+            return FallbackAnalyzer(
+                OpenAIAnalyzer(
+                    api_key=self.settings.openai_api_key,
+                    model=self.settings.openai_model,
+                    base_url=self.settings.openai_base_url,
+                    timeout_seconds=self.settings.openai_timeout_seconds,
+                    reasoning_effort=self.settings.openai_reasoning_effort,
+                ),
+                heuristic,
+                label="openai",
+            )
+        return heuristic
+
+    def _build_embedding_provider(self) -> Any:
+        local_provider = LocalEmbeddingProvider()
+        if self.settings.gemini_api_key:
+            return FallbackEmbeddingProvider(
+                GeminiEmbeddingProvider(
+                    api_key=self.settings.gemini_api_key,
+                    model=self.settings.gemini_embedding_model,
+                    base_url=self.settings.gemini_embedding_base_url,
+                    output_dimensionality=self.settings.gemini_embedding_dimensions,
+                    timeout_seconds=self.settings.gemini_timeout_seconds,
+                ),
+                local_provider,
+            )
+        return local_provider
 
     def start(self) -> None:
         self.database.initialize()
         self.storage.initialize()
+        self.rebuild_search_indexes()
         if not self.worker_enabled:
             return
         self._worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
@@ -168,6 +207,7 @@ class HolocronService:
                     "source_value": source_value or filename,
                 },
             )
+            reindex_paper(connection, paper_id)
             connection.commit()
 
         self.enqueue_analysis(paper_id)
@@ -210,6 +250,11 @@ class HolocronService:
                     full_text=extracted.full_text[: self.settings.max_text_chars],
                 )
             )
+            embedding_input = DocumentEmbeddingInput(
+                title=extracted.title or paper["title"],
+                text=build_embedding_text(extracted.abstract, analysis, extracted.full_text),
+            )
+            embedding = self.embedding_provider.embed_document(embedding_input)
             status = "ready" if analysis.confidence >= 0.6 else "needs_review"
             now = utc_now()
 
@@ -252,6 +297,8 @@ class HolocronService:
                         tasks_json = ?,
                         tags_json = ?,
                         followup_questions_json = ?,
+                        embedding_json = ?,
+                        embedding_model = ?,
                         analysis_version = ?,
                         analysis_confidence = ?,
                         updated_at = ?
@@ -270,6 +317,8 @@ class HolocronService:
                         dumps_json(analysis.tasks),
                         dumps_json(analysis.tags),
                         dumps_json(analysis.followup_questions),
+                        dumps_json(embedding),
+                        getattr(self.embedding_provider, "version", "embedding"),
                         analysis.version,
                         analysis.confidence,
                         now,
@@ -286,6 +335,8 @@ class HolocronService:
                         "status": status,
                     },
                 )
+                reindex_paper(connection, paper_id)
+                rebuild_embedding_map(connection)
                 connection.commit()
         except Exception as error:
             with self.database.connect() as connection:
@@ -301,24 +352,53 @@ class HolocronService:
                 )
                 connection.commit()
 
-    def list_papers(self) -> list[dict[str, Any]]:
+    def rebuild_search_indexes(self) -> None:
         with self.database.connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT
-                    papers.*,
-                    paper_artifacts.summary_short,
-                    paper_artifacts.tags_json,
-                    paper_artifacts.analysis_confidence,
-                    COUNT(notes.id) AS note_count
-                FROM papers
-                LEFT JOIN paper_artifacts ON paper_artifacts.paper_id = papers.id
-                LEFT JOIN notes ON notes.paper_id = papers.id
-                GROUP BY papers.id
-                ORDER BY papers.added_at DESC
-                """
-            ).fetchall()
-        return [self._serialize_paper_list_item(row) for row in rows]
+            rows = connection.execute("SELECT id FROM papers ORDER BY id ASC").fetchall()
+            connection.execute("DELETE FROM paper_search")
+            connection.execute("DELETE FROM paper_tags")
+            for row in rows:
+                reindex_paper(connection, int(row["id"]))
+            rebuild_embedding_map(connection)
+            connection.commit()
+
+    def query_library(
+        self,
+        query: str | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        normalized_query = " ".join((query or "").split())
+        safe_limit = max(1, min(limit, 200))
+
+        with self.database.connect() as connection:
+            if normalized_query:
+                candidate_rows = search_rows(
+                    connection,
+                    query="",
+                    limit=200,
+                )
+                rows = rank_rows_by_embedding(candidate_rows, normalized_query, self.embedding_provider, safe_limit)
+                if not rows or rows[0]["semantic_score"] <= 0.05:
+                    rows = search_rows(
+                        connection,
+                        query=normalized_query,
+                        limit=safe_limit,
+                    )
+            else:
+                rows = search_rows(
+                    connection,
+                    query="",
+                    limit=safe_limit,
+                )
+            graph = get_library_graph(rows)
+
+        return {
+            "papers": [serialize_paper_list_item(row) for row in rows],
+            "graph": graph,
+        }
+
+    def list_papers(self) -> list[dict[str, Any]]:
+        return self.query_library()["papers"]
 
     def get_paper(self, paper_id: int) -> dict[str, Any]:
         with self.database.connect() as connection:
@@ -337,12 +417,7 @@ class HolocronService:
                 "SELECT * FROM notes WHERE paper_id = ? ORDER BY created_at DESC",
                 (paper_id,),
             ).fetchall()
-            events = connection.execute(
-                "SELECT * FROM events WHERE paper_id = ? ORDER BY created_at DESC",
-                (paper_id,),
-            ).fetchall()
-
-        return self._serialize_paper_detail(paper_row, notes, events)
+        return serialize_paper_detail(paper_row, notes)
 
     def add_note(self, paper_id: int, body: str, page_number: int | None = None) -> dict[str, Any]:
         body = body.strip()
@@ -367,68 +442,9 @@ class HolocronService:
                 "annotated",
                 {"page_number": page_number},
             )
+            reindex_paper(connection, paper_id)
             connection.commit()
         return self.get_paper(paper_id)
-
-    def mark_opened(self, paper_id: int) -> dict[str, Any]:
-        now = utc_now()
-        with self.database.connect() as connection:
-            connection.execute(
-                "UPDATE papers SET last_opened_at = ? WHERE id = ?",
-                (now, paper_id),
-            )
-            self._insert_event(connection, paper_id, "opened", {})
-            connection.commit()
-        return self.get_paper(paper_id)
-
-    def toggle_tag(self, paper_id: int, tag: str) -> dict[str, Any]:
-        with self.database.connect() as connection:
-            row = connection.execute(
-                "SELECT tags_json FROM paper_artifacts WHERE paper_id = ?",
-                (paper_id,),
-            ).fetchone()
-            if not row:
-                raise KeyError(f"Paper {paper_id} not found")
-            tags = loads_json(row["tags_json"], [])
-            if tag in tags:
-                tags = [item for item in tags if item != tag]
-            else:
-                tags.append(tag)
-            connection.execute(
-                "UPDATE paper_artifacts SET tags_json = ?, updated_at = ? WHERE paper_id = ?",
-                (dumps_json(tags), utc_now(), paper_id),
-            )
-            self._insert_event(connection, paper_id, "tag_corrected", {"tag": tag})
-            connection.commit()
-        return self.get_paper(paper_id)
-
-    def list_review_queue(self) -> list[dict[str, Any]]:
-        papers = self.list_papers()
-        review_cutoff = datetime.now(UTC) - timedelta(days=self.settings.review_after_days)
-        queue_items: list[dict[str, Any]] = []
-        for paper in papers:
-            reasons: list[str] = []
-            added_at = datetime.fromisoformat(paper["added_at"])
-            tags = paper["tags"]
-            if paper["status"] == "needs_review":
-                reasons.append("Analysis confidence was low or extraction failed.")
-            if paper["last_opened_at"] is None and added_at <= review_cutoff:
-                reasons.append(
-                    f"Paper has been unread for more than {self.settings.review_after_days} days."
-                )
-            if "status:important" in tags and paper["note_count"] == 0:
-                reasons.append("Marked important but still has no notes.")
-            if reasons:
-                queue_items.append(
-                    {
-                        "paper_id": paper["id"],
-                        "title": paper["title"] or paper["original_filename"] or "Untitled paper",
-                        "status": paper["status"],
-                        "reasons": reasons,
-                        "tags": tags,
-                    }
-                )
-        return queue_items
 
     def open_pdf(self, paper_id: int) -> tuple[Path, str]:
         with self.database.connect() as connection:
@@ -455,73 +471,3 @@ class HolocronService:
             """,
             (paper_id, event_type, dumps_json(payload), utc_now()),
         )
-
-    def _serialize_paper_list_item(self, row: Any) -> dict[str, Any]:
-        return {
-            "id": int(row["id"]),
-            "title": row["title"],
-            "original_filename": row["original_filename"],
-            "status": row["status"],
-            "added_at": row["added_at"],
-            "last_opened_at": row["last_opened_at"],
-            "summary_short": row["summary_short"],
-            "analysis_confidence": row["analysis_confidence"],
-            "tags": loads_json(row["tags_json"], []),
-            "note_count": int(row["note_count"] or 0),
-        }
-
-    def _serialize_paper_detail(
-        self,
-        row: Any,
-        notes: list[Any],
-        events: list[Any],
-    ) -> dict[str, Any]:
-        tags = loads_json(row["tags_json"], [])
-        return {
-            "id": int(row["id"]),
-            "title": row["title"],
-            "original_filename": row["original_filename"],
-            "source_type": row["source_type"],
-            "source_value": row["source_value"],
-            "status": row["status"],
-            "analysis_error": row["analysis_error"],
-            "added_at": row["added_at"],
-            "last_opened_at": row["last_opened_at"],
-            "last_reviewed_at": row["last_reviewed_at"],
-            "authors": loads_json(row["authors_json"], []),
-            "year": row["year"],
-            "abstract": row["abstract"],
-            "summary_short": row["summary_short"],
-            "summary_long": row["summary_long"],
-            "why_it_matters": row["why_it_matters"],
-            "method_summary": row["method_summary"],
-            "limitations": loads_json(row["limitations_json"], []),
-            "claims": loads_json(row["claims_json"], []),
-            "datasets": loads_json(row["datasets_json"], []),
-            "tasks": loads_json(row["tasks_json"], []),
-            "tags": tags,
-            "followup_questions": loads_json(row["followup_questions_json"], []),
-            "analysis_version": row["analysis_version"],
-            "analysis_confidence": row["analysis_confidence"],
-            "text_excerpt": row["text_excerpt"],
-            "file_url": f"/api/papers/{int(row['id'])}/file",
-            "note_count": len(notes),
-            "notes": [
-                {
-                    "id": int(note["id"]),
-                    "body": note["body"],
-                    "page_number": note["page_number"],
-                    "created_at": note["created_at"],
-                }
-                for note in notes
-            ],
-            "events": [
-                {
-                    "id": int(event["id"]),
-                    "event_type": event["event_type"],
-                    "payload": loads_json(event["payload_json"], {}),
-                    "created_at": event["created_at"],
-                }
-                for event in events
-            ],
-        }

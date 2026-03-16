@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from .config import Settings
 from .service import HolocronService
@@ -27,10 +27,13 @@ def build_handler(service: HolocronService) -> type[BaseHTTPRequestHandler]:
                 self._write_json({"status": "ok"})
                 return
             if path == "/api/papers":
-                self._write_json({"papers": service.list_papers()})
-                return
-            if path == "/api/review-queue":
-                self._write_json({"items": service.list_review_queue()})
+                query = parse_qs(parsed.query)
+                text_query = query.get("q", [""])[0]
+                try:
+                    limit = int(query.get("limit", ["100"])[0])
+                except ValueError:
+                    limit = 100
+                self._write_json(service.query_library(query=text_query, limit=limit))
                 return
             if path.startswith("/api/papers/") and path.endswith("/file"):
                 self._serve_pdf(path)
@@ -70,15 +73,6 @@ def build_handler(service: HolocronService) -> type[BaseHTTPRequestHandler]:
                         page_number=payload.get("page_number"),
                     )
                     self._write_json({"paper": paper})
-                    return
-                if path.startswith("/api/papers/") and path.endswith("/open"):
-                    paper_id = self._paper_id_from_path(path, suffix="/open")
-                    self._write_json({"paper": service.mark_opened(paper_id)})
-                    return
-                if path.startswith("/api/papers/") and path.endswith("/tags/toggle"):
-                    paper_id = self._paper_id_from_path(path, suffix="/tags/toggle")
-                    payload = self._read_json()
-                    self._write_json({"paper": service.toggle_tag(paper_id, str(payload["tag"]))})
                     return
             except KeyError as error:
                 self._write_json({"error": str(error)}, status=HTTPStatus.NOT_FOUND)

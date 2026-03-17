@@ -28,6 +28,7 @@ from .library import (
     build_embedding_text,
     dumps_json,
     get_library_graph,
+    loads_json,
     rank_rows_by_embedding,
     rebuild_embedding_map,
     reindex_paper,
@@ -36,6 +37,7 @@ from .library import (
     serialize_paper_list_item,
     utc_now,
 )
+from .qa import FallbackAnswerer, GeminiAnswerer, HeuristicAnswerer, PaperChunk, split_text_into_chunks
 from .storage import FileSystemBlobStore
 
 
@@ -48,6 +50,7 @@ class HolocronService:
         extractor: PdfExtractor | None = None,
         analyzer: Any | None = None,
         embedding_provider: Any | None = None,
+        answerer: Any | None = None,
         worker_enabled: bool = True,
     ) -> None:
         self.settings = settings
@@ -56,6 +59,7 @@ class HolocronService:
         self.extractor = extractor or PdfExtractor()
         self.analyzer = analyzer or self._build_analyzer()
         self.embedding_provider = embedding_provider or self._build_embedding_provider()
+        self.answerer = answerer or self._build_answerer()
         self.worker_enabled = worker_enabled
         self._queue: queue.Queue[int | None] = queue.Queue()
         self._stop_event = threading.Event()
@@ -93,6 +97,20 @@ class HolocronService:
                 local_provider,
             )
         return local_provider
+
+    def _build_answerer(self) -> Any:
+        heuristic = HeuristicAnswerer()
+        if self.settings.gemini_api_key:
+            return FallbackAnswerer(
+                GeminiAnswerer(
+                    api_key=self.settings.gemini_api_key,
+                    model=self.settings.gemini_generation_model,
+                    base_url=self.settings.gemini_embedding_base_url,
+                    timeout_seconds=self.settings.gemini_timeout_seconds,
+                ),
+                heuristic,
+            )
+        return heuristic
 
     def start(self) -> None:
         self.database.initialize()
@@ -250,11 +268,17 @@ class HolocronService:
                     full_text=extracted.full_text[: self.settings.max_text_chars],
                 )
             )
+            # One paper-level embedding organizes the library and map.
             embedding_input = DocumentEmbeddingInput(
                 title=extracted.title or paper["title"],
                 text=build_embedding_text(extracted.abstract, analysis, extracted.full_text),
             )
             embedding = self.embedding_provider.embed_document(embedding_input)
+            # Separate chunk embeddings ground paper chat in local excerpts.
+            chunk_rows = self._build_chunk_rows(
+                title=extracted.title or paper["title"],
+                full_text=extracted.full_text[: self.settings.max_text_chars],
+            )
             status = "ready" if analysis.confidence >= 0.6 else "needs_review"
             now = utc_now()
 
@@ -325,6 +349,22 @@ class HolocronService:
                         paper_id,
                     ),
                 )
+                connection.execute("DELETE FROM paper_chunks WHERE paper_id = ?", (paper_id,))
+                for chunk in chunk_rows:
+                    connection.execute(
+                        """
+                        INSERT INTO paper_chunks (
+                            paper_id, chunk_index, text, embedding_json, created_at
+                        ) VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (
+                            paper_id,
+                            chunk["chunk_index"],
+                            chunk["text"],
+                            dumps_json(chunk["embedding"]),
+                            now,
+                        ),
+                    )
                 self._insert_event(
                     connection,
                     paper_id,
@@ -404,7 +444,12 @@ class HolocronService:
         with self.database.connect() as connection:
             paper_row = connection.execute(
                 """
-                SELECT papers.*, paper_artifacts.*
+                SELECT papers.*, paper_artifacts.*,
+                       (
+                           SELECT COUNT(*)
+                           FROM paper_chunks
+                           WHERE paper_chunks.paper_id = papers.id
+                       ) AS chunk_count
                 FROM papers
                 LEFT JOIN paper_artifacts ON paper_artifacts.paper_id = papers.id
                 WHERE papers.id = ?
@@ -418,6 +463,79 @@ class HolocronService:
                 (paper_id,),
             ).fetchall()
         return serialize_paper_detail(paper_row, notes)
+
+    def answer_question(self, paper_id: int, question: str) -> dict[str, Any]:
+        normalized_question = " ".join(question.split())
+        if not normalized_question:
+            raise ValueError("Question cannot be empty.")
+
+        with self.database.connect() as connection:
+            paper_row = connection.execute(
+                """
+                SELECT papers.*, paper_artifacts.summary_short
+                FROM papers
+                LEFT JOIN paper_artifacts ON paper_artifacts.paper_id = papers.id
+                WHERE papers.id = ?
+                """,
+                (paper_id,),
+            ).fetchone()
+            if not paper_row:
+                raise KeyError(f"Paper {paper_id} not found")
+            rows = connection.execute(
+                """
+                SELECT chunk_index, text, embedding_json
+                FROM paper_chunks
+                WHERE paper_id = ?
+                ORDER BY chunk_index ASC
+                """,
+                (paper_id,),
+            ).fetchall()
+            if not rows:
+                raise ValueError("This paper is still being processed. Try again in a moment.")
+
+            query_embedding = self.embedding_provider.embed_query(normalized_question)
+            ranked_chunks: list[PaperChunk] = []
+            for row in rows:
+                embedding = loads_json(row["embedding_json"], [])
+                score = 0.0
+                if embedding:
+                    score = sum(left * right for left, right in zip(query_embedding, embedding))
+                ranked_chunks.append(
+                    PaperChunk(
+                        chunk_index=int(row["chunk_index"]),
+                        text=row["text"],
+                        score=score,
+                    )
+                )
+
+            ranked_chunks.sort(key=lambda chunk: (chunk.score, -chunk.chunk_index), reverse=True)
+            top_chunks = ranked_chunks[:4]
+            answer = self.answerer.answer_question(
+                paper_title=paper_row["title"] or paper_row["original_filename"] or "Untitled paper",
+                question=normalized_question,
+                contexts=top_chunks,
+            )
+            self._insert_event(
+                connection,
+                paper_id,
+                "question_answered",
+                {"question": normalized_question},
+            )
+            connection.commit()
+
+        return {
+            "question": normalized_question,
+            "answer": answer.answer,
+            "model": answer.model,
+            "citations": [
+                {
+                    "chunk_index": chunk.chunk_index,
+                    "score": round(chunk.score, 4),
+                    "snippet": chunk.text[:420].strip(),
+                }
+                for chunk in top_chunks
+            ],
+        }
 
     def add_note(self, paper_id: int, body: str, page_number: int | None = None) -> dict[str, Any]:
         body = body.strip()
@@ -471,3 +589,22 @@ class HolocronService:
             """,
             (paper_id, event_type, dumps_json(payload), utc_now()),
         )
+
+    def _build_chunk_rows(self, title: str | None, full_text: str) -> list[dict[str, Any]]:
+        chunks = split_text_into_chunks(full_text)
+        if not chunks and full_text.strip():
+            chunks = [full_text[:1400].strip()]
+
+        rows: list[dict[str, Any]] = []
+        for index, chunk_text in enumerate(chunks, start=1):
+            embedding = self.embedding_provider.embed_document(
+                DocumentEmbeddingInput(title=title, text=chunk_text)
+            )
+            rows.append(
+                {
+                    "chunk_index": index,
+                    "text": chunk_text,
+                    "embedding": embedding,
+                }
+            )
+        return rows

@@ -11,7 +11,7 @@
       <header class="page-header">
         <p class="eyebrow">Holocron</p>
         <input id="library-search" type="search" placeholder="Search your papers">
-        <p id="library-meta" class="caption">0 papers • 0 need review</p>
+        <p id="library-meta" class="caption">0 papers</p>
       </header>
 
       <section class="surface upload-panel">
@@ -28,7 +28,7 @@
           <h1>Map</h1>
           <p id="library-graph-count" class="caption">0 points</p>
         </div>
-        <p class="map-intro caption">Nearby points are similar papers.</p>
+        <p class="map-intro caption">Nearby points are similar papers. Click to open.</p>
         <div class="map-stage">
           <svg id="library-map" viewBox="0 0 100 100" role="img" aria-label="Paper map">
             <g id="library-map-viewport"></g>
@@ -43,34 +43,6 @@
           <p id="library-count" class="caption">0 in view</p>
         </div>
         <ul id="paper-list" class="paper-list"></ul>
-      </section>
-
-      <section id="empty-detail" class="surface empty-detail">
-        <p class="caption">Select a paper from the list or map.</p>
-      </section>
-
-      <section id="paper-detail" class="surface detail-panel hidden">
-        <p id="paper-status" class="status-label"></p>
-        <h2 id="paper-title"></h2>
-        <p id="paper-meta" class="caption"></p>
-        <p id="summary-short" class="lead"></p>
-        <ul id="paper-tags" class="signal-list"></ul>
-        <a id="paper-file-link" class="open-link" target="_blank" rel="noreferrer">Open PDF</a>
-
-        <section class="detail-section">
-          <div class="section-row">
-            <h3>Notes</h3>
-            <span id="note-count" class="caption"></span>
-          </div>
-          <form id="note-form" class="note-form">
-            <textarea id="note-body" rows="4" placeholder="Add a note"></textarea>
-            <div class="note-actions">
-              <input id="note-page" type="number" min="1" placeholder="Page">
-              <button type="submit">Save note</button>
-            </div>
-          </form>
-          <ul id="notes" class="stack-list"></ul>
-        </section>
       </section>
     </main>
 

@@ -266,6 +266,7 @@ def serialize_paper_detail(row: Any, notes: list[Any]) -> dict[str, Any]:
         "summary_short": row["summary_short"],
         "summary_long": row["summary_long"],
         "tags": loads_json(row["tags_json"], []),
+        "chunk_count": int(row["chunk_count"] or 0),
         "file_url": f"/api/papers/{int(row['id'])}/file",
         "note_count": len(notes),
         "notes": [

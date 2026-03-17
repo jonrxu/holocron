@@ -159,6 +159,18 @@ class DeterministicEmbeddingProvider:
         return self._embed(query)
 
 
+class FakeAnswerer:
+    def answer_question(self, paper_title: str, question: str, contexts):  # noqa: ANN001
+        del paper_title
+        first = contexts[0]
+        from holocron.qa import AnswerResult
+
+        return AnswerResult(
+            answer=f"Answering '{question}' from excerpt {first.chunk_index}.",
+            model="fake-answerer-v1",
+        )
+
+
 class FakeHTTPResponse:
     def __init__(self, payload: dict[str, object]) -> None:
         self.payload = payload

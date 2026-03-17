@@ -76,6 +76,17 @@ CREATE VIRTUAL TABLE IF NOT EXISTS paper_search USING fts5(
     tokenize = 'unicode61 remove_diacritics 2'
 );
 
+CREATE TABLE IF NOT EXISTS paper_chunks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    paper_id INTEGER NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    embedding_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    UNIQUE (paper_id, chunk_index),
+    FOREIGN KEY (paper_id) REFERENCES papers(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS notes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     paper_id INTEGER NOT NULL,
@@ -110,6 +121,7 @@ CREATE TABLE IF NOT EXISTS events (
 
 CREATE INDEX IF NOT EXISTS idx_papers_added_at ON papers(added_at DESC);
 CREATE INDEX IF NOT EXISTS idx_papers_status ON papers(status);
+CREATE INDEX IF NOT EXISTS idx_paper_chunks_paper_id ON paper_chunks(paper_id, chunk_index ASC);
 CREATE INDEX IF NOT EXISTS idx_paper_tags_tag ON paper_tags(tag);
 CREATE INDEX IF NOT EXISTS idx_paper_tags_family ON paper_tags(family, tag);
 CREATE INDEX IF NOT EXISTS idx_notes_paper_id ON notes(paper_id, created_at DESC);
@@ -142,6 +154,32 @@ class Database:
             connection.execute("ALTER TABLE paper_artifacts ADD COLUMN map_x REAL")
         if "map_y" not in columns:
             connection.execute("ALTER TABLE paper_artifacts ADD COLUMN map_y REAL")
+
+        tables = {
+            row["name"]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+        }
+        if "paper_chunks" not in tables:
+            connection.execute(
+                """
+                CREATE TABLE paper_chunks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    paper_id INTEGER NOT NULL,
+                    chunk_index INTEGER NOT NULL,
+                    text TEXT NOT NULL,
+                    embedding_json TEXT NOT NULL DEFAULT '[]',
+                    created_at TEXT NOT NULL,
+                    UNIQUE (paper_id, chunk_index),
+                    FOREIGN KEY (paper_id) REFERENCES papers(id) ON DELETE CASCADE
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_paper_chunks_paper_id
+                ON paper_chunks(paper_id, chunk_index ASC)
+                """
+            )
 
     def connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=30.0, check_same_thread=False)

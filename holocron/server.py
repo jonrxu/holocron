@@ -41,11 +41,17 @@ def build_handler(service: HolocronService) -> type[BaseHTTPRequestHandler]:
             if path.startswith("/api/papers/"):
                 self._serve_paper_detail(path)
                 return
+            if self._is_paper_page(path):
+                self._serve_static("paper.html", "text/html; charset=utf-8")
+                return
             if path == "/":
                 self._serve_static("index.html", "text/html; charset=utf-8")
                 return
             if path == "/app.js":
                 self._serve_static("app.js", "application/javascript; charset=utf-8")
+                return
+            if path == "/paper.js":
+                self._serve_static("paper.js", "application/javascript; charset=utf-8")
                 return
             if path == "/styles.css":
                 self._serve_static("styles.css", "text/css; charset=utf-8")
@@ -73,6 +79,12 @@ def build_handler(service: HolocronService) -> type[BaseHTTPRequestHandler]:
                         page_number=payload.get("page_number"),
                     )
                     self._write_json({"paper": paper})
+                    return
+                if path.startswith("/api/papers/") and path.endswith("/ask"):
+                    paper_id = self._paper_id_from_path(path, suffix="/ask")
+                    payload = self._read_json()
+                    answer = service.answer_question(paper_id, str(payload.get("question", "")))
+                    self._write_json({"answer": answer})
                     return
             except KeyError as error:
                 self._write_json({"error": str(error)}, status=HTTPStatus.NOT_FOUND)
@@ -128,6 +140,12 @@ def build_handler(service: HolocronService) -> type[BaseHTTPRequestHandler]:
             if suffix:
                 stripped = stripped.removesuffix(suffix)
             return int(stripped)
+
+        def _is_paper_page(self, path: str) -> bool:
+            if not path.startswith("/papers/"):
+                return False
+            paper_id = path.removeprefix("/papers/").strip("/")
+            return paper_id.isdigit()
 
         def _read_json(self) -> dict[str, Any]:
             content_length = int(self.headers.get("Content-Length", "0"))

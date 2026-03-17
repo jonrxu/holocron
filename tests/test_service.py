@@ -6,7 +6,7 @@ from pathlib import Path
 
 from holocron.service import HolocronService
 
-from support import DeterministicEmbeddingProvider, FakeAnalyzer, FakeExtractor, make_settings
+from support import DeterministicEmbeddingProvider, FakeAnalyzer, FakeAnswerer, FakeExtractor, make_settings
 
 
 class HolocronServiceTests(unittest.TestCase):
@@ -18,6 +18,7 @@ class HolocronServiceTests(unittest.TestCase):
             extractor=FakeExtractor(),
             analyzer=FakeAnalyzer(),
             embedding_provider=DeterministicEmbeddingProvider(),
+            answerer=FakeAnswerer(),
             worker_enabled=False,
         )
         self.service.start()
@@ -35,10 +36,22 @@ class HolocronServiceTests(unittest.TestCase):
         self.assertEqual(detail["title"], "Holocron Research Memory")
         self.assertIn("lightweight system", detail["summary_short"])
         self.assertIn("status:important", detail["tags"])
+        self.assertGreater(detail["chunk_count"], 0)
 
         updated = self.service.add_note(paper["id"], "Useful architecture sketch.", page_number=2)
         self.assertEqual(updated["note_count"], 1)
         self.assertEqual(updated["notes"][0]["page_number"], 2)
+
+    def test_answer_question_returns_grounded_excerpt_matches(self) -> None:
+        paper = self.service.ingest_upload("sample.pdf", b"%PDF-1.4 sample")
+        self.service.process_paper(paper["id"])
+
+        result = self.service.answer_question(paper["id"], "What does the system improve?")
+
+        self.assertEqual(result["model"], "fake-answerer-v1")
+        self.assertIn("system improve", result["question"])
+        self.assertGreaterEqual(len(result["citations"]), 1)
+        self.assertGreaterEqual(result["citations"][0]["chunk_index"], 1)
 
     def test_duplicate_upload_reuses_existing_paper(self) -> None:
         first = self.service.ingest_upload("sample.pdf", b"%PDF-1.4 sample")

@@ -9,14 +9,15 @@ The product goal is simple:
 - connect related papers in a sparse semantic graph that stays useful instead of noisy
 
 The v1 product and system design lives in [docs/holocron-v1-spec.md](/Users/jonathanxu/Documents/Code/holocron/docs/holocron-v1-spec.md).
+The next implementation plan lives in [docs/next-steps.md](/Users/jonathanxu/Documents/Code/holocron/docs/next-steps.md).
 
 ## Current shape
 
 Holocron is currently a small single-user Python app with:
-- SQLite for metadata, notes, and search
+- SQLite for metadata, search, and paper chat retrieval
 - filesystem-backed blob storage for PDFs
-- background analysis for summaries, tags, and embeddings
-- a minimal web UI for upload, search, map, list, and notes
+- background analysis for summaries, tags, embeddings, and chunk indexing
+- a minimal web UI for upload, search, map, list, and a split paper view with chat + PDF
 
 By default PDFs are stored under `./data/blobs`. If you want the library on a synced drive, set `HOLOCRON_BLOB_DIR` to a folder in Dropbox, Google Drive, iCloud Drive, OneDrive, a NAS mount, or any shared disk you already trust.
 
@@ -35,12 +36,14 @@ Most useful settings:
 - `HOLOCRON_DATA_DIR=/path/to/local-app-data`
 - `HOLOCRON_PORT=8420`
 - `OPENAI_API_KEY=...` for model-backed paper analysis
-- `GEMINI_API_KEY=...` or `GOOGLE_API_KEY=...` for embeddings and semantic search
+- `GEMINI_API_KEY=...` or `GOOGLE_API_KEY=...` for embeddings and paper chat answers
 - `HOLOCRON_GEMINI_EMBEDDING_MODEL=gemini-embedding-001`
+- `HOLOCRON_GEMINI_GENERATION_MODEL=gemini-2.5-flash-lite`
 
 Behavior is simple:
 - analysis uses OpenAI if configured, otherwise a built-in heuristic fallback
-- embeddings use Gemini if configured, otherwise a local hashed fallback
+- paper-level and chunk-level embeddings use Gemini if configured, otherwise a local hashed fallback
+- paper chat uses Gemini if configured, otherwise an extractive fallback
 
 ## Verify
 

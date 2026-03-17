@@ -4,7 +4,14 @@ import json
 import urllib.request
 from dataclasses import replace
 
-from .analysis_common import AnalysisInput, AnalysisResult, coerce_analysis_result
+from .analysis_common import (
+    AnalysisInput,
+    AnalysisResult,
+    coerce_analysis_result,
+    paper_analysis_schema,
+    paper_analysis_system_prompt,
+    paper_analysis_user_prompt,
+)
 
 
 class OpenAIAnalyzer:
@@ -35,7 +42,7 @@ class OpenAIAnalyzer:
                     "content": [
                         {
                             "type": "input_text",
-                            "text": self._system_prompt(),
+                            "text": paper_analysis_system_prompt(),
                         }
                     ],
                 },
@@ -44,7 +51,7 @@ class OpenAIAnalyzer:
                     "content": [
                         {
                             "type": "input_text",
-                            "text": self._user_prompt(payload),
+                            "text": paper_analysis_user_prompt(payload),
                         }
                     ],
                 },
@@ -54,7 +61,7 @@ class OpenAIAnalyzer:
                     "type": "json_schema",
                     "name": "holocron_paper_analysis",
                     "strict": True,
-                    "schema": self._schema(),
+                    "schema": paper_analysis_schema(),
                 }
             },
         }
@@ -104,83 +111,3 @@ class OpenAIAnalyzer:
                     ):
                         return content["text"]
         raise ValueError("OpenAI response did not contain structured text output.")
-
-    def _system_prompt(self) -> str:
-        return (
-            "You analyze scientific papers for a personal research memory. "
-            "Return concise, factual structured JSON only. "
-            "Use neutral academic language. "
-            "Infer tasks, datasets, and typed tags only when the text supports them. "
-            "Always include status:unread in tags. "
-            "Allowed tag families: domain:*, paper_type:*, status:*, quality:*, needs:*, has:*, task:*."
-        )
-
-    def _user_prompt(self, payload: AnalysisInput) -> str:
-        title = payload.title or "Unknown title"
-        authors = ", ".join(payload.authors) if payload.authors else "Unknown authors"
-        year = str(payload.year) if payload.year else "Unknown year"
-        abstract = payload.abstract or "No abstract extracted."
-        return (
-            f"Title: {title}\n"
-            f"Authors: {authors}\n"
-            f"Year: {year}\n"
-            f"Abstract:\n{abstract}\n\n"
-            "Paper text:\n"
-            f"{payload.full_text}\n\n"
-            "Return a concise analysis that is useful for search, recall, and building relations "
-            "between papers in a local library."
-        )
-
-    def _schema(self) -> dict[str, object]:
-        return {
-            "type": "object",
-            "additionalProperties": False,
-            "required": [
-                "summary_short",
-                "summary_long",
-                "why_it_matters",
-                "method_summary",
-                "limitations",
-                "claims",
-                "datasets",
-                "tasks",
-                "tags",
-                "followup_questions",
-                "confidence",
-            ],
-            "properties": {
-                "summary_short": {"type": "string"},
-                "summary_long": {"type": "string"},
-                "why_it_matters": {"type": "string"},
-                "method_summary": {"type": "string"},
-                "limitations": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                },
-                "claims": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                },
-                "datasets": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                },
-                "tasks": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                },
-                "tags": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                },
-                "followup_questions": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                },
-                "confidence": {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 1,
-                },
-            },
-        }

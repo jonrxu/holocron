@@ -45,6 +45,8 @@ class FakeAnalyzer:
     def analyze(self, payload):  # noqa: ANN001
         del payload
         return AnalysisResult(
+            problem="Scientific papers get lost after download and are hard to revisit.",
+            core_idea="Turn each paper into a structured, searchable memory object.",
             summary_short="A lightweight system for storing and revisiting scientific papers.",
             summary_long=(
                 "The paper proposes a lightweight personal research memory. "
@@ -52,6 +54,8 @@ class FakeAnalyzer:
             ),
             why_it_matters="It helps prevent papers from disappearing into Downloads.",
             method_summary="Store the PDF, extract text, generate a brief, then keep notes and events.",
+            prerequisites=["basic machine learning", "information retrieval"],
+            concepts=["research memory", "retrieval", "LabCorpus"],
             limitations=["The prototype focuses on a single-user workflow."],
             claims=["Background analysis improves recall and note-taking."],
             datasets=["LabCorpus"],
@@ -77,10 +81,14 @@ class StructuredAnalyzer:
         title = (payload.title or "").lower()
         if "transformer" in title:
             return AnalysisResult(
+                problem="Scientific search systems need stronger ranking models.",
+                core_idea="Use a transformer encoder to rank candidate papers more accurately.",
                 summary_short="Transformer retrieval model for scientific ranking.",
                 summary_long="A machine learning paper about transformer-based retrieval.",
                 why_it_matters="Useful for search-heavy workflows.",
                 method_summary="Train a transformer encoder for document ranking.",
+                prerequisites=["machine learning", "information retrieval"],
+                concepts=["transformers", "ranking", "retrieval"],
                 limitations=["Focused on one benchmark."],
                 claims=["Transformer retrieval improves ranking quality."],
                 datasets=["ArxivBench"],
@@ -92,10 +100,14 @@ class StructuredAnalyzer:
             )
         if "benchmark" in title:
             return AnalysisResult(
+                problem="Retrieval systems need a shared benchmark for comparison.",
+                core_idea="Standardize evaluation on a common retrieval benchmark.",
                 summary_short="Benchmark paper for retrieval systems.",
                 summary_long="A retrieval benchmark paper evaluated on ArxivBench.",
                 why_it_matters="Useful for comparing search models.",
                 method_summary="Benchmark multiple retrieval systems on a shared dataset.",
+                prerequisites=["information retrieval", "benchmark evaluation"],
+                concepts=["retrieval", "benchmarking", "ArxivBench"],
                 limitations=["Benchmark scope is narrow."],
                 claims=["The benchmark exposes meaningful gaps between retrieval systems."],
                 datasets=["ArxivBench"],
@@ -107,10 +119,14 @@ class StructuredAnalyzer:
             )
         if "protein" in title:
             return AnalysisResult(
+                problem="Protein modeling literature is broad and fragmented.",
+                core_idea="Organize protein modeling methods into a clearer survey taxonomy.",
                 summary_short="Survey of protein modeling systems.",
                 summary_long="A biology survey covering recent protein modeling methods.",
                 why_it_matters="Good overview paper for the space.",
                 method_summary="Survey and taxonomy of protein models.",
+                prerequisites=["basic biology", "protein modeling"],
+                concepts=["proteins", "surveys", "taxonomy"],
                 limitations=["Not an empirical benchmark paper."],
                 claims=["The survey organizes the field into useful categories."],
                 datasets=["ProteinSet"],
@@ -121,10 +137,14 @@ class StructuredAnalyzer:
                 version="structured-v1",
             )
         return AnalysisResult(
+            problem="Controller robustness under shift is hard to achieve.",
+            core_idea="Evaluate a learned controller that improves stability in simulation.",
             summary_short="Robotics control system with notes-friendly writeup.",
             summary_long="A robotics paper focused on controller design and evaluation.",
             why_it_matters="Useful for control and deployment workflows.",
             method_summary="Evaluate a learned controller in simulation.",
+            prerequisites=["robotics basics", "control systems"],
+            concepts=["robotics", "control", "simulation"],
             limitations=["Only tested in a narrow environment."],
             claims=["The controller improves stability under shift."],
             datasets=["RoboArena"],

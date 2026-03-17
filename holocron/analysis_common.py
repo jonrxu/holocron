@@ -57,10 +57,14 @@ class AnalysisInput:
 
 @dataclass
 class AnalysisResult:
+    problem: str
+    core_idea: str
     summary_short: str
     summary_long: str
     why_it_matters: str
     method_summary: str
+    prerequisites: list[str]
+    concepts: list[str]
     limitations: list[str]
     claims: list[str]
     datasets: list[str]
@@ -81,10 +85,14 @@ def coerce_analysis_result(parsed: dict[str, object], version: str) -> AnalysisR
         tags.insert(0, "status:unread")
 
     return AnalysisResult(
+        problem=str(parsed.get("problem", "")).strip(),
+        core_idea=str(parsed.get("core_idea", "")).strip(),
         summary_short=str(parsed.get("summary_short", "")).strip(),
         summary_long=str(parsed.get("summary_long", "")).strip(),
         why_it_matters=str(parsed.get("why_it_matters", "")).strip(),
         method_summary=str(parsed.get("method_summary", "")).strip(),
+        prerequisites=coerce_strings(list(parsed.get("prerequisites", [])), limit=6),
+        concepts=coerce_strings(list(parsed.get("concepts", [])), limit=8),
         limitations=coerce_strings(list(parsed.get("limitations", [])), limit=5),
         claims=coerce_strings(list(parsed.get("claims", [])), limit=5),
         datasets=coerce_strings(list(parsed.get("datasets", [])), limit=8),
@@ -94,3 +102,101 @@ def coerce_analysis_result(parsed: dict[str, object], version: str) -> AnalysisR
         confidence=float(parsed.get("confidence", 0.7)),
         version=version,
     )
+
+
+def paper_analysis_system_prompt() -> str:
+    return (
+        "You analyze scientific papers for a personal research memory. "
+        "Return concise, factual structured JSON only. "
+        "Focus on the paper's problem, core idea, method, findings, limitations, "
+        "prerequisites, concepts, datasets, tasks, and why it matters. "
+        "Infer fields only when the text supports them. "
+        "Always include status:unread in tags. "
+        "Allowed tag families: domain:*, paper_type:*, status:*, quality:*, needs:*, has:*, task:*."
+    )
+
+
+def paper_analysis_user_prompt(payload: AnalysisInput) -> str:
+    title = payload.title or "Unknown title"
+    authors = ", ".join(payload.authors) if payload.authors else "Unknown authors"
+    year = str(payload.year) if payload.year else "Unknown year"
+    abstract = payload.abstract or "No abstract extracted."
+    return (
+        f"Title: {title}\n"
+        f"Authors: {authors}\n"
+        f"Year: {year}\n"
+        f"Abstract:\n{abstract}\n\n"
+        "Paper text:\n"
+        f"{payload.full_text}\n\n"
+        "Return a compact structured paper card that is useful for library search, "
+        "knowledge lineage, and revisiting the paper later."
+    )
+
+
+def paper_analysis_schema() -> dict[str, object]:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "problem",
+            "core_idea",
+            "summary_short",
+            "summary_long",
+            "why_it_matters",
+            "method_summary",
+            "prerequisites",
+            "concepts",
+            "limitations",
+            "claims",
+            "datasets",
+            "tasks",
+            "tags",
+            "followup_questions",
+            "confidence",
+        ],
+        "properties": {
+            "problem": {"type": "string"},
+            "core_idea": {"type": "string"},
+            "summary_short": {"type": "string"},
+            "summary_long": {"type": "string"},
+            "why_it_matters": {"type": "string"},
+            "method_summary": {"type": "string"},
+            "prerequisites": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "concepts": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "limitations": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "claims": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "datasets": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "tasks": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "tags": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "followup_questions": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+            },
+        },
+    }

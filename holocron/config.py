@@ -42,6 +42,7 @@ class Settings:
     openai_timeout_seconds: int = 90
     openai_reasoning_effort: str = "low"
     gemini_api_key: str | None = None
+    gemini_analysis_model: str = "gemini-2.5-flash"
     gemini_embedding_model: str = "gemini-embedding-001"
     gemini_generation_model: str = "gemini-2.5-flash-lite"
     gemini_embedding_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
@@ -78,6 +79,7 @@ class Settings:
             openai_timeout_seconds=int(os.getenv("HOLOCRON_OPENAI_TIMEOUT_SECONDS", "90")),
             openai_reasoning_effort=os.getenv("HOLOCRON_OPENAI_REASONING_EFFORT", "low"),
             gemini_api_key=gemini_api_key or None,
+            gemini_analysis_model=os.getenv("HOLOCRON_GEMINI_ANALYSIS_MODEL", "gemini-2.5-flash"),
             gemini_embedding_model=os.getenv("HOLOCRON_GEMINI_EMBEDDING_MODEL", "gemini-embedding-001"),
             gemini_generation_model=os.getenv("HOLOCRON_GEMINI_GENERATION_MODEL", "gemini-2.5-flash-lite"),
             gemini_embedding_base_url=os.getenv(

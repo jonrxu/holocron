@@ -51,15 +51,23 @@ class HeuristicAnalyzer:
         datasets = self._extract_datasets(payload.full_text)
         tasks = self._detect_tasks(payload.full_text)
         tags = self._build_tags(payload, tasks, datasets, limitations)
+        problem = self._select_problem(payload, summary_short)
+        core_idea = self._select_core_idea(method_summary, claims, summary_short)
+        prerequisites = self._build_prerequisites(payload, tasks, tags)
+        concepts = self._extract_concepts(payload, tasks, datasets, tags)
         why_it_matters = self._build_why_it_matters(payload, claims, summary_short)
         followup_questions = self._build_followups(payload, tasks, datasets, limitations)
         confidence = self._estimate_confidence(payload, claims, summary_candidates)
 
         return AnalysisResult(
+            problem=problem,
+            core_idea=core_idea,
             summary_short=summary_short,
             summary_long=summary_long,
             why_it_matters=why_it_matters,
             method_summary=method_summary,
+            prerequisites=prerequisites,
+            concepts=concepts,
             limitations=limitations,
             claims=claims,
             datasets=datasets,
@@ -69,6 +77,22 @@ class HeuristicAnalyzer:
             confidence=confidence,
             version=self.version,
         )
+
+    def _select_problem(self, payload: AnalysisInput, summary_short: str) -> str:
+        if payload.abstract:
+            first_sentence = split_sentences(payload.abstract)
+            if first_sentence:
+                return trim_sentence(first_sentence[0])
+        if payload.title:
+            return f"The paper addresses the problem framed by {payload.title}."
+        return summary_short
+
+    def _select_core_idea(self, method_summary: str, claims: list[str], summary_short: str) -> str:
+        if method_summary:
+            return trim_sentence(method_summary, 220)
+        if claims:
+            return trim_sentence(claims[0], 220)
+        return summary_short
 
     def _select_claims(self, sentences: list[str]) -> list[str]:
         claim_markers = ("show", "demonstrate", "propose", "present", "find", "achieve", "improve")
@@ -155,6 +179,40 @@ class HeuristicAnalyzer:
         if payload.title:
             return f"{payload.title} matters because it captures a specific research problem in a reusable, searchable form."
         return summary_short
+
+    def _build_prerequisites(self, payload: AnalysisInput, tasks: list[str], tags: list[str]) -> list[str]:
+        prerequisites = []
+        if "domain:ml" in tags:
+            prerequisites.append("basic machine learning")
+        if "domain:biology" in tags:
+            prerequisites.append("basic biology")
+        if "domain:robotics" in tags:
+            prerequisites.append("robotics basics")
+        if tasks:
+            prerequisites.append(tasks[0])
+        if payload.abstract and "benchmark" in payload.abstract.lower():
+            prerequisites.append("benchmark evaluation")
+        return dedupe(prerequisites[:4])
+
+    def _extract_concepts(
+        self,
+        payload: AnalysisInput,
+        tasks: list[str],
+        datasets: list[str],
+        tags: list[str],
+    ) -> list[str]:
+        concepts = []
+        if payload.title:
+            concepts.extend(re.findall(r"[A-Z][A-Za-z0-9-]{2,}", payload.title))
+        concepts.extend(tasks)
+        concepts.extend(datasets)
+        if "domain:ml" in tags:
+            concepts.append("machine learning")
+        if "domain:biology" in tags:
+            concepts.append("biology")
+        if "domain:robotics" in tags:
+            concepts.append("robotics")
+        return dedupe(concepts[:8])
 
     def _build_followups(
         self,

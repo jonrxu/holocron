@@ -198,14 +198,44 @@ def reindex_paper(connection: Any, paper_id: int) -> None:
     )
 
 
-def build_embedding_text(abstract: str | None, analysis: Any, full_text: str) -> str:
+def build_paper_card(title: str | None, authors: list[str], year: int | None, analysis: Any) -> dict[str, Any]:
+    return {
+        "title": title or "",
+        "authors": authors[:8],
+        "year": year,
+        "problem": analysis.problem,
+        "core_idea": analysis.core_idea,
+        "summary_short": analysis.summary_short,
+        "summary_long": analysis.summary_long,
+        "why_it_matters": analysis.why_it_matters,
+        "method_summary": analysis.method_summary,
+        "prerequisites": analysis.prerequisites,
+        "concepts": analysis.concepts,
+        "claims": analysis.claims,
+        "limitations": analysis.limitations,
+        "datasets": analysis.datasets,
+        "tasks": analysis.tasks,
+        "tags": analysis.tags,
+    }
+
+
+def build_paper_card_text(paper_card: dict[str, Any], full_text: str) -> str:
+    # The paper card is the high-level representation used for map placement and library retrieval.
     parts = [
-        abstract or "",
-        analysis.summary_short,
-        analysis.summary_long,
-        analysis.why_it_matters,
-        analysis.method_summary,
-        " ".join(analysis.claims[:3]),
+        paper_card.get("title", ""),
+        f"Problem: {paper_card.get('problem', '')}".strip(),
+        f"Core idea: {paper_card.get('core_idea', '')}".strip(),
+        f"Summary: {paper_card.get('summary_short', '')}".strip(),
+        paper_card.get("summary_long", ""),
+        f"Why it matters: {paper_card.get('why_it_matters', '')}".strip(),
+        f"Method: {paper_card.get('method_summary', '')}".strip(),
+        "Concepts: " + ", ".join(paper_card.get("concepts", [])),
+        "Prerequisites: " + ", ".join(paper_card.get("prerequisites", [])),
+        "Tasks: " + ", ".join(paper_card.get("tasks", [])),
+        "Datasets: " + ", ".join(paper_card.get("datasets", [])),
+        "Claims: " + " ".join(paper_card.get("claims", [])[:3]),
+        "Limitations: " + " ".join(paper_card.get("limitations", [])[:2]),
+        "Tags: " + ", ".join(paper_card.get("tags", [])),
     ]
     source = "\n\n".join(part.strip() for part in parts if part and part.strip())
     if source:

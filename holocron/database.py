@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS paper_artifacts (
     paper_id INTEGER PRIMARY KEY,
     extracted_text TEXT,
     text_excerpt TEXT,
+    paper_card_json TEXT NOT NULL DEFAULT '{}',
     summary_short TEXT,
     summary_long TEXT,
     why_it_matters TEXT,
@@ -144,6 +145,10 @@ class Database:
             row["name"]
             for row in connection.execute("PRAGMA table_info(paper_artifacts)").fetchall()
         }
+        if "paper_card_json" not in columns:
+            connection.execute(
+                "ALTER TABLE paper_artifacts ADD COLUMN paper_card_json TEXT NOT NULL DEFAULT '{}'"
+            )
         if "embedding_json" not in columns:
             connection.execute(
                 "ALTER TABLE paper_artifacts ADD COLUMN embedding_json TEXT NOT NULL DEFAULT '[]'"

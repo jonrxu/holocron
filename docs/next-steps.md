@@ -9,7 +9,12 @@ The biggest remaining gap is representation quality. Right now the paper-level e
 
 ## Priority 1: Gemini structured paper card
 
-Add a Gemini-backed analyzer that produces one canonical paper card per paper:
+Status: in progress.
+
+The app now has a Gemini-backed structured analyzer path and stores one canonical paper card per paper.
+The next refinement is to improve the schema quality and prompt quality so the card better captures the paper's essence.
+
+Each card should stay focused on:
 - problem
 - core idea
 - method
@@ -21,11 +26,10 @@ Add a Gemini-backed analyzer that produces one canonical paper card per paper:
 - tasks
 - why it matters
 
-Then:
+The remaining work here is:
 - embed the paper card for library search, map placement, and related-paper retrieval
+- tune the card prompt so embeddings reflect the paper's high-level meaning better
 - keep chunk embeddings only for grounded paper chat
-
-This should improve the "essence" captured by the map and semantic search.
 
 ## Priority 2: Memory layer
 

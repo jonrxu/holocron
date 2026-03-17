@@ -6,6 +6,7 @@ import subprocess
 from dataclasses import asdict, replace
 
 from .analysis_common import AnalysisInput, AnalysisResult, coerce_analysis_result
+from .analysis_gemini import GeminiAnalyzer
 from .analysis_heuristic import HeuristicAnalyzer
 from .analysis_openai import OpenAIAnalyzer
 
@@ -48,6 +49,7 @@ __all__ = [
     "AnalysisResult",
     "ExternalCommandAnalyzer",
     "FallbackAnalyzer",
+    "GeminiAnalyzer",
     "HeuristicAnalyzer",
     "OpenAIAnalyzer",
 ]

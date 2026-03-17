@@ -42,6 +42,13 @@ class HolocronServiceTests(unittest.TestCase):
         self.assertEqual(updated["note_count"], 1)
         self.assertEqual(updated["notes"][0]["page_number"], 2)
 
+        with self.service.database.connect() as connection:
+            row = connection.execute(
+                "SELECT paper_card_json FROM paper_artifacts WHERE paper_id = ?",
+                (paper["id"],),
+            ).fetchone()
+        self.assertIn("structured, searchable memory object", row["paper_card_json"])
+
     def test_answer_question_returns_grounded_excerpt_matches(self) -> None:
         paper = self.service.ingest_upload("sample.pdf", b"%PDF-1.4 sample")
         self.service.process_paper(paper["id"])

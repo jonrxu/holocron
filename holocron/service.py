@@ -12,6 +12,7 @@ from .analysis import (
     AnalysisInput,
     ExternalCommandAnalyzer,
     FallbackAnalyzer,
+    GeminiAnalyzer,
     HeuristicAnalyzer,
     OpenAIAnalyzer,
 )
@@ -25,7 +26,8 @@ from .embedding import (
 )
 from .extractor import PdfExtractor
 from .library import (
-    build_embedding_text,
+    build_paper_card,
+    build_paper_card_text,
     dumps_json,
     get_library_graph,
     loads_json,
@@ -80,6 +82,17 @@ class HolocronService:
                 ),
                 heuristic,
                 label="openai",
+            )
+        if self.settings.gemini_api_key:
+            return FallbackAnalyzer(
+                GeminiAnalyzer(
+                    api_key=self.settings.gemini_api_key,
+                    model=self.settings.gemini_analysis_model,
+                    base_url=self.settings.gemini_embedding_base_url,
+                    timeout_seconds=self.settings.gemini_timeout_seconds,
+                ),
+                heuristic,
+                label="gemini",
             )
         return heuristic
 
@@ -268,10 +281,16 @@ class HolocronService:
                     full_text=extracted.full_text[: self.settings.max_text_chars],
                 )
             )
+            paper_card = build_paper_card(
+                title=extracted.title or paper["title"],
+                authors=extracted.authors,
+                year=extracted.year,
+                analysis=analysis,
+            )
             # One paper-level embedding organizes the library and map.
             embedding_input = DocumentEmbeddingInput(
                 title=extracted.title or paper["title"],
-                text=build_embedding_text(extracted.abstract, analysis, extracted.full_text),
+                text=build_paper_card_text(paper_card, extracted.full_text),
             )
             embedding = self.embedding_provider.embed_document(embedding_input)
             # Separate chunk embeddings ground paper chat in local excerpts.
@@ -311,6 +330,7 @@ class HolocronService:
                     UPDATE paper_artifacts
                     SET extracted_text = ?,
                         text_excerpt = ?,
+                        paper_card_json = ?,
                         summary_short = ?,
                         summary_long = ?,
                         why_it_matters = ?,
@@ -331,6 +351,7 @@ class HolocronService:
                     (
                         extracted.full_text,
                         extracted.full_text[:2000],
+                        dumps_json(paper_card),
                         analysis.summary_short,
                         analysis.summary_long,
                         analysis.why_it_matters,

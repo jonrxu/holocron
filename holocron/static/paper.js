@@ -46,14 +46,22 @@ function statusLabel(status) {
   return String(status || "").replaceAll("_", " ");
 }
 
+function toAbsoluteUrl(path) {
+  return new URL(path, window.location.origin).href;
+}
+
 function parsePaperId() {
   const match = window.location.pathname.match(/^\/papers\/(\d+)\/?$/);
   return match ? Number(match[1]) : null;
 }
 
+function paperIsProcessing() {
+  return !state.paper || ["queued", "processing"].includes(state.paper.status);
+}
+
 function ensureIntroMessage() {
   const intro = state.chatMessages.find((message) => message.kind === "system");
-  const processing = !state.paper || ["queued", "processing"].includes(state.paper.status);
+  const processing = paperIsProcessing();
   const content = processing
     ? "This paper is still processing. You can start reading the PDF now."
     : "Ask questions about the paper while you read.";
@@ -126,6 +134,25 @@ function renderChat() {
   thread.scrollTop = thread.scrollHeight;
 }
 
+function renderComposer() {
+  const input = document.querySelector("#ask-question");
+  const submit = document.querySelector("#ask-submit");
+  const status = document.querySelector("#ask-status");
+  const processing = paperIsProcessing();
+
+  input.disabled = processing;
+  submit.disabled = processing;
+  input.placeholder = processing
+    ? "Questions unlock when processing finishes"
+    : "Ask this paper a question";
+
+  if (processing) {
+    status.textContent = "Processing paper...";
+  } else if (status.textContent === "Processing paper...") {
+    status.textContent = "";
+  }
+}
+
 function renderPaper() {
   if (!state.paper) {
     return;
@@ -137,10 +164,12 @@ function renderPaper() {
   document.querySelector("#paper-file-link").href = state.paper.file_url;
 
   const frame = document.querySelector("#pdf-frame");
-  if (frame.src !== state.paper.file_url) {
-    frame.src = state.paper.file_url;
+  const pdfUrl = toAbsoluteUrl(state.paper.file_url);
+  if (frame.src !== pdfUrl) {
+    frame.src = pdfUrl;
   }
 
+  renderComposer();
   ensureIntroMessage();
   renderChat();
 }
@@ -164,7 +193,7 @@ function schedulePoll() {
 
 async function submitQuestion(event) {
   event.preventDefault();
-  if (!state.paperId) {
+  if (!state.paperId || paperIsProcessing()) {
     return;
   }
 
@@ -218,6 +247,7 @@ async function submitQuestion(event) {
 
 function bindUi() {
   document.querySelector("#ask-form").addEventListener("submit", submitQuestion);
+  renderComposer();
   document.querySelector("#chat-thread").addEventListener("click", (event) => {
     const button = event.target.closest(".citation-chip");
     if (!button) {

@@ -372,6 +372,11 @@ ul {
   resize: vertical;
 }
 
+.chat-composer textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .ask-actions {
   justify-content: flex-end;
 }
